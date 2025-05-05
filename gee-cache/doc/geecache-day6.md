@@ -47,7 +47,34 @@ book_title: Day6 防止缓存击穿
 
 我们并发了 N 个请求 `?key=Tom`，8003 节点向 8001 同时发起了 N 次请求。假设对数据库的访问没有做任何限制的，很可能向数据库也发起 N 次请求，容易导致缓存击穿和穿透。即使对数据库做了防护，HTTP 请求是非常耗费资源的操作，针对相同的 key，8003 节点向 8001 发起三次请求也是没有必要的。那这种情况下，我们如何做到只向远端节点发起一次请求呢？
 
-geecache 实现了一个名为 singleflight 的 package 来解决这个问题。
+geecache 实现了一个名为 singleflight 的 package 来解决这个问题。标准库的实现：[golang.org/x/sync/singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight)
+
+```go
+g := new(Group) // Group represents a class of work and forms a namespace in which units of work can be executed with duplicate suppression.
+
+block := make(chan struct{})
+// Do executes and returns the results of the given function, making sure that only one execution is in-flight for a given key at a time. If a duplicate comes in, the duplicate caller waits for the original to complete and receives the same results. The return value shared indicates whether v was given to multiple callers.
+// DoChan is like Do but returns a channel that will receive the results when they are ready.
+res1c := g.DoChan("key", func() (interface{}, error) {
+	<-block
+	return "func 1", nil
+})
+res2c := g.DoChan("key", func() (interface{}, error) {
+	<-block
+	return "func 2", nil
+})
+close(block)
+
+res1 := <-res1c
+res2 := <-res2c
+
+// Results are shared by functions executed with duplicate keys.
+fmt.Println("Shared:", res2.Shared)
+// Only the first function is executed: it is registered and started with "key",
+// and doesn't complete before the second function is registered with a duplicate key.
+fmt.Println("Equal results:", res1.Val.(string) == res2.Val.(string))
+fmt.Println("Result:", res1.Val)
+```
 
 [day6-single-flight/geecache/singleflight/singleflight.go - github](https://github.com/geektutu/7days-golang/tree/master/gee-cache/day6-single-flight/geecache/singleflight)
 
